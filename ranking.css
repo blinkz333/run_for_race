@@ -1,0 +1,361 @@
+/* =====================================================
+   Ranking page - made for a big screen (TV / projector, 16:9),
+   in the same wedding hall colors as the game. Sizes follow the
+   screen (vh / vw), so it fills any screen without scrolling.
+   ===================================================== */
+
+/* ===== Pixel font (Pixelify Sans, SIL Open Font License - see assets/fonts/OFL.txt) ===== */
+@font-face {
+  font-family: 'Pixelify Sans';
+  src: url('assets/fonts/PixelifySans.woff2') format('woff2');
+  font-weight: 400 700;
+  font-display: block;
+}
+
+:root {
+  --ceiling: #3d0c19;
+  --wall: #7a1c32;
+  --wall-pattern: #8a2640;
+  --wainscot: #5a1124;
+  --gold: #e8c26a;
+  --gold-dark: #b08a3e;
+  --gold-light: #fff1b8;
+  --text: #fff1b8;
+  --shadow: #3d0c19;
+  --pink: #f28bb0;
+  --silver: #d9dde8;
+  --bronze: #d08a55;
+  --new: #9be05a;
+  /* Thai names: the pixel font has no Thai letters, so those come from the system font */
+  --font: 'Pixelify Sans', 'Noto Sans Thai', 'Sarabun', system-ui, sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* Hidden parts stay hidden, even ones that use display: grid */
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: #1e0710;
+  color: var(--text);
+  font-family: var(--font);
+}
+
+/* ===== Board: the wall of the hall with a gold frame ===== */
+#board {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2vh;
+  padding: 3vh 4vw 2vh;
+  background-color: var(--wall);
+  /* Small diamond wallpaper, like the game's wall */
+  background-image:
+    linear-gradient(45deg, var(--wall-pattern) 25%, transparent 25%, transparent 75%, var(--wall-pattern) 75%),
+    linear-gradient(45deg, var(--wall-pattern) 25%, transparent 25%, transparent 75%, var(--wall-pattern) 75%);
+  background-size: 4vh 4vh;
+  background-position: 0 0, 2vh 2vh;
+  box-shadow:
+    inset 0 0 0 1vh var(--gold-dark),
+    inset 0 0 0 1.6vh var(--gold),
+    inset 0 0 0 2.2vh var(--ceiling);
+}
+
+/* ===== Header ===== */
+.board-header {
+  text-align: center;
+  line-height: 1;
+}
+
+.board-couple {
+  font-size: 2.6vh;
+  color: var(--pink);
+  letter-spacing: 0.3vh;
+}
+
+.board-title {
+  margin-top: 0.8vh;
+  font-size: 7vh;
+  font-weight: 700;
+  color: var(--gold-light);
+  text-shadow: 0 0.6vh 0 var(--shadow), 0 0 3vh rgba(255, 230, 160, 0.35);
+}
+
+.board-subtitle {
+  margin-top: 0.8vh;
+  font-size: 3.2vh;
+  font-weight: 700;
+  color: var(--gold);
+  letter-spacing: 1.2vh;
+}
+
+/* ===== Podium: 2nd, 1st, 3rd side by side, 1st the tallest ===== */
+.podium {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+  gap: 2vw;
+  max-width: 120vh;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.podium-place {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  min-width: 0;
+}
+
+.podium-place[data-rank='1'] {
+  order: 2;
+}
+.podium-place[data-rank='2'] {
+  order: 1;
+}
+.podium-place[data-rank='3'] {
+  order: 3;
+}
+
+.podium-medal {
+  display: grid;
+  place-items: center;
+  width: 7vh;
+  height: 7vh;
+  border: 0.5vh solid var(--shadow);
+  font-size: 4vh;
+  font-weight: 700;
+  color: var(--shadow);
+  background: var(--medal);
+  box-shadow: 0 0.5vh 0 var(--shadow);
+}
+
+.podium-name {
+  max-width: 100%;
+  margin-top: 1.2vh;
+  overflow: hidden;
+  font-size: 3.6vh;
+  font-weight: 700;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-shadow: 0 0.4vh 0 var(--shadow);
+}
+
+.podium-score {
+  margin-top: 0.6vh;
+  font-size: 4.4vh;
+  font-weight: 700;
+  color: var(--medal);
+  text-shadow: 0 0.4vh 0 var(--shadow);
+}
+
+.podium-detail {
+  margin-top: 0.4vh;
+  font-size: 2.2vh;
+  opacity: 0.85;
+}
+
+/* The step the player stands on */
+.podium-step {
+  width: 100%;
+  margin-top: 1.2vh;
+  border: 0.5vh solid var(--shadow);
+  border-bottom: none;
+  background: linear-gradient(var(--medal), color-mix(in srgb, var(--medal) 60%, var(--shadow)));
+  box-shadow: inset 0 0.8vh 0 rgba(255, 255, 255, 0.35);
+}
+
+.podium-place[data-rank='1'] {
+  --medal: var(--gold);
+}
+.podium-place[data-rank='2'] {
+  --medal: var(--silver);
+}
+.podium-place[data-rank='3'] {
+  --medal: var(--bronze);
+}
+.podium-place[data-rank='1'] .podium-step {
+  height: 9vh;
+}
+.podium-place[data-rank='2'] .podium-step {
+  height: 6vh;
+}
+.podium-place[data-rank='3'] .podium-step {
+  height: 4vh;
+}
+
+/* Nobody in this place yet */
+.podium-place.is-empty .podium-name,
+.podium-place.is-empty .podium-score {
+  opacity: 0.4;
+}
+
+/* ===== Places 4 and down (two columns when there are many) ===== */
+.ranking-list {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(var(--rows, 7), minmax(0, 1fr));
+  grid-template-columns: repeat(var(--columns, 1), minmax(0, 1fr));
+  column-gap: 2vw;
+  row-gap: 0.8vh;
+  max-width: 120vh;
+  width: 100%;
+  margin: 0 auto;
+  list-style: none;
+}
+
+.ranking-row {
+  display: grid;
+  grid-template-columns: 6vh minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 2vh;
+  max-height: 7vh;
+  padding: 0 2vh;
+  border: 0.4vh solid var(--gold-dark);
+  background: rgba(61, 12, 25, 0.82);
+  font-size: calc(3vh * var(--row-scale, 1));
+  line-height: 1.1;
+}
+
+/* Two columns: no room for level and time, the name matters more */
+.ranking-list.is-columns .ranking-row {
+  grid-template-columns: 5vh minmax(0, 1fr) auto;
+}
+.ranking-list.is-columns .row-detail {
+  display: none;
+}
+
+.row-rank {
+  font-weight: 700;
+  color: var(--gold);
+}
+
+.row-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.row-detail {
+  font-size: 0.75em;
+  white-space: nowrap;
+  opacity: 0.75;
+}
+
+.row-score {
+  min-width: 4.5em;
+  text-align: right;
+  font-weight: 700;
+  color: var(--gold-light);
+}
+
+/* ===== A new or better score: flashes for a few seconds ===== */
+.is-new .podium-name,
+.is-new .row-name {
+  color: var(--new);
+}
+
+.ranking-row.is-new {
+  border-color: var(--new);
+  animation: flash 0.5s steps(2) 6;
+}
+
+.podium-place.is-new .podium-medal {
+  animation: flash 0.5s steps(2) 6;
+}
+
+.new-badge {
+  margin-left: 1vh;
+  font-size: 0.7em;
+  color: var(--new);
+}
+
+@keyframes flash {
+  50% {
+    background-color: var(--wall-pattern);
+  }
+}
+
+/* ===== Messages and footer ===== */
+.board-message {
+  text-align: center;
+  font-size: 3.4vh;
+  color: var(--gold-light);
+}
+
+.board-footer {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: auto; /* stays at the bottom, even with few players */
+  justify-content: space-between;
+  gap: 2vw;
+  font-size: 2vh;
+  opacity: 0.85;
+}
+
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 1vh;
+}
+
+.live-dot {
+  width: 1.4vh;
+  height: 1.4vh;
+  background: var(--new);
+  animation: blink 2s steps(2) infinite;
+}
+
+.live.is-offline .live-dot {
+  background: var(--pink);
+  animation: none;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.2;
+  }
+}
+
+/* Phones held upright: smaller text so it still fits */
+@media (orientation: portrait) {
+  #board {
+    padding: 3vh 5vw 2vh;
+  }
+  .board-title {
+    font-size: 5vh;
+  }
+  .podium-name {
+    font-size: 2.4vh;
+  }
+  .podium-score {
+    font-size: 2.8vh;
+  }
+  .ranking-row,
+  .ranking-list.is-columns .ranking-row {
+    font-size: calc(2.2vh * var(--row-scale, 1));
+    grid-template-columns: 4vh minmax(0, 1fr) auto;
+  }
+  .row-detail {
+    display: none;
+  }
+  .row-score {
+    min-width: 0;
+  }
+}
