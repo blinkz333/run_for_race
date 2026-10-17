@@ -13,6 +13,8 @@ const SLIDE_FRAME_DURATION = 0.08; // seconds per slide "spark" frame
 const MAX_JUMPS = 2; // ground jump + one jump in the air
 const FLIP_DURATION = 0.45; // seconds for one full front flip
 const GROW_SPEED = 8; // how fast the groom grows / shrinks for the Magnum power-up
+const BUBBLE_CYCLE = 1.6; // seconds for one "hic" bubble to rise and pop (Game Over)
+const SNORE_CYCLE = 2.4; // seconds for one "z" to float up and fade (Game Over)
 
 // ---------- Pixel art ----------
 // The head and body are drawn from pixel maps (one character = one pixel).
@@ -189,6 +191,79 @@ const IDLE_LEGS = {
 };
 const IDLE_FAR_ARM = { elbow: [5, 14], hand: [5, 17] };
 
+// ---------- Game Over: passed out drunk, hugging a Regency bottle ----------
+// Drawn standing like the other frames, then turned onto his back (see makeDrunkFrame).
+
+// Eyes squeezed shut (eyelid lines), rosy drunk cheeks and a red nose
+const DRUNK_HEAD = [
+  "...hh.hhhhh.h...",
+  "...hhhhhhhhhhh..",
+  "..hhhhhhhhhhhhh.",
+  "..hhhhhhhssssss.",
+  "..hhssssgggsggg.",
+  "..hsssssgzgggzg.",
+  "..hssssssrrssrR.",
+  "...ssssssmwwwms.",
+  "....sssssssssss.",
+  "......sssssss...",
+];
+const DRUNK_PALETTE = {
+  ...PALETTE,
+  z: "#8a5a44", // closed eye
+  r: "#f07a8a", // rosy cheek
+  R: "#e0505e", // red nose
+};
+
+// Small Regency bottle (4x10) hugged to the chest, its neck at his mouth
+const MINI_BOTTLE = [
+  ".gg.",
+  ".oo.",
+  ".aA.",
+  "oaAo",
+  "acca",
+  "acra",
+  "acca",
+  "aaAa",
+  "adda",
+  ".oo.",
+];
+const MINI_BOTTLE_PALETTE = {
+  o: "#3a1a08", // outline
+  a: "#b5651d", // amber glass
+  A: "#e8a04a", // glass shine
+  d: "#6e3410", // brandy at the bottom
+  g: "#e8c26a", // gold cap
+  c: "#f6ead0", // cream label
+  r: "#c0303a", // red on the label
+};
+const MINI_BOTTLE_POS = [12, 8]; // top-left inside the standing sprite
+
+// Both arms wrapped around the bottle; one leg flat on the carpet, one knee up.
+// (In the standing frame a small x ends up near the carpet once he is lying down.)
+const DRUNK_POSE = {
+  legs: {
+    nearKnee: [11, 20],
+    nearFoot: [5, 25],
+    farKnee: [4, 21],
+    farFoot: [3, 25],
+    bob: 0,
+  },
+  arm: { elbow: [9, 16], hand: [12, 14] },
+  farArm: { elbow: [8, 15], hand: [11, 12] },
+};
+
+// Where the "hic" bubbles and snores start in the lying sprite (his mouth and his head)
+const DRUNK_MOUTH = [8, 2];
+const DRUNK_HEAD_TOP = [2, 4];
+const BUBBLE_COLOR = "rgba(255, 248, 239, 0.85)";
+const SNORE_COLOR = "#fff1b8";
+
+// Dropped bouquet lying on the carpet next to his feet
+const DROPPED_BOUQUET_X = 24; // from his lying sprite's left edge
+
+// Little pixel "z" for snoring (4x4)
+const SNORE_Z = ["zzzz", "..z.", ".z..", "zzzz"];
+
 // Knee slide across the dance floor: leaning back, knees on the carpet,
 // bouquet raised high. 16x20 pixels (drawn at the bottom of the sprite).
 const SLIDE_BODY = [
@@ -252,7 +327,6 @@ function linePoints([x0, y0], [x1, y1]) {
   }
   return points;
 }
-
 // Flower bouquet held upright; (hx, hy) is the hand
 function drawBouquet(pixel, hx, hy) {
   for (const [dx, dy, color] of BOUQUET) pixel(hx + dx, hy + dy, color);
@@ -274,8 +348,11 @@ function newSprite() {
   return { canvas, pixel };
 }
 
-// Draws one frame of the groom on a small offscreen canvas
-function makeFrame(legs, arm, farArm) {
+// Draws one frame of the groom on a small offscreen canvas.
+// options.head / options.palette swap the face; options.drawProp draws what he holds
+// (under his near hand) instead of the bouquet.
+function makeFrame(legs, arm, farArm, options = {}) {
+  const { head = HEAD, palette = PALETTE, drawProp = null } = options;
   const { canvas, pixel } = newSprite();
   const bob = legs.bob;
 
@@ -310,9 +387,9 @@ function makeFrame(legs, arm, farArm) {
   drawArm([6, 11 + bob], farArm, COLORS.FAR_SLEEVE, COLORS.FAR_HAND);
   drawLeg([6, 16], legs.farKnee, legs.farFoot, COLORS.FAR_LEG, COLORS.FAR_SHOE);
 
-  [...HEAD, ...TORSO].forEach((row, y) => {
+  [...head, ...TORSO].forEach((row, y) => {
     for (let x = 0; x < row.length; x++) {
-      const color = PALETTE[row[x]];
+      const color = palette[row[x]];
       if (color) pixel(x, y + bob, color);
     }
   });
@@ -324,10 +401,83 @@ function makeFrame(legs, arm, farArm) {
     COLORS.NEAR_LEG,
     COLORS.NEAR_SHOE,
   );
-  drawArm([8, 11 + bob], arm, COLORS.NEAR_SLEEVE, COLORS.NEAR_HAND);
-  drawBouquet(pixel, arm.hand[0], arm.hand[1] + bob);
+  if (drawProp) {
+    drawProp(pixel);
+    drawArm([8, 11 + bob], arm, COLORS.NEAR_SLEEVE, COLORS.NEAR_HAND);
+  } else {
+    drawArm([8, 11 + bob], arm, COLORS.NEAR_SLEEVE, COLORS.NEAR_HAND);
+    drawBouquet(pixel, arm.hand[0], arm.hand[1] + bob);
+  }
 
   return canvas;
+}
+
+// Draws a pixel map at (left, top) with the 1-pixel helper
+function drawPixelMap(pixel, map, palette, left, top) {
+  map.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) {
+      const color = palette[row[x]];
+      if (color) pixel(left + x, top + y, color);
+    }
+  });
+}
+
+// Turns a standing sprite onto its back: head to the left, face up, feet to the right
+function turnOntoBack(standing) {
+  const canvas = document.createElement("canvas");
+  canvas.width = standing.height;
+  canvas.height = standing.width;
+  const ctx = canvas.getContext("2d");
+  ctx.translate(0, standing.width);
+  ctx.rotate(-Math.PI / 2);
+  ctx.drawImage(standing, 0, 0);
+  return canvas;
+}
+
+// Lowest row with any pixel in it (so the lying groom can rest right on the carpet)
+function findBottomRow(canvas) {
+  const { data } = canvas
+    .getContext("2d")
+    .getImageData(0, 0, canvas.width, canvas.height);
+  for (let y = canvas.height - 1; y >= 0; y--) {
+    for (let x = 0; x < canvas.width; x++) {
+      if (data[(y * canvas.width + x) * 4 + 3] > 0) return y;
+    }
+  }
+  return canvas.height - 1;
+}
+
+// Passed out on his back, hugging the bottle, eyes shut and cheeks red
+function makeDrunkFrame() {
+  const [bottleX, bottleY] = MINI_BOTTLE_POS;
+  const standing = makeFrame(
+    DRUNK_POSE.legs,
+    DRUNK_POSE.arm,
+    DRUNK_POSE.farArm,
+    {
+      head: DRUNK_HEAD,
+      palette: DRUNK_PALETTE,
+      drawProp: (pixel) =>
+        drawPixelMap(pixel, MINI_BOTTLE, MINI_BOTTLE_PALETTE, bottleX, bottleY),
+    },
+  );
+  return turnOntoBack(standing);
+}
+
+// The bouquet he dropped, lying on its side (stems to the left)
+function makeDroppedBouquet() {
+  const { canvas, pixel } = newSprite();
+  drawBouquet(pixel, 8, 8);
+  pixel(8, 8, COLORS.WRAP); // no hand holding it any more
+  pixel(8, 9, COLORS.WRAP_SHADOW);
+  const lying = document.createElement("canvas");
+  lying.width = canvas.height;
+  lying.height = canvas.width;
+  const ctx = lying.getContext("2d");
+  ctx.translate(canvas.height, 0);
+  ctx.rotate(Math.PI / 2);
+  ctx.drawImage(canvas, 0, 0);
+  return lying;
 }
 
 // Slide frame: body map + raised bouquet + little friction sparks
@@ -371,6 +521,12 @@ const IDLE_FRAMES = [0, 1].map((bob) =>
 );
 
 const SLIDE_FRAMES = SLIDE_SPARKS.map((sparks) => makeSlideFrame(sparks));
+
+const DRUNK_FRAME = makeDrunkFrame();
+const DRUNK_BOTTOM = findBottomRow(DRUNK_FRAME);
+const DROPPED_BOUQUET = makeDroppedBouquet();
+const DROPPED_BOUQUET_BOTTOM = findBottomRow(DROPPED_BOUQUET);
+
 export class Player {
   constructor() {
     this.width = SPRITE_WIDTH;
@@ -399,13 +555,20 @@ export class Player {
     this.slideFrame = 0;
     this.scale = 1; // > 1 while giant (Magnum power-up); grows from the feet
     this.targetScale = 1;
+    this.passedOut = false; // Game Over: lying drunk on the carpet
+    this.passedOutTime = 0;
+  }
+
+  // Game Over: he collapses on his back, hugging a Regency bottle
+  passOut() {
+    this.passedOut = true;
+    this.passedOutTime = 0;
   }
 
   // Magnum power-up: grow to CONFIG.GIANT_SCALE, or back to normal
   setGiant(giant) {
     this.targetScale = giant ? CONFIG.GIANT_SCALE : 1;
   }
-
   startRunning() {
     this.running = true;
     this.runTimer = 0;
@@ -475,6 +638,11 @@ export class Player {
       (this.targetScale - this.scale) * Math.min(1, dt * GROW_SPEED);
     if (Math.abs(this.targetScale - this.scale) < 0.01)
       this.scale = this.targetScale;
+
+    if (this.passedOut) {
+      this.passedOutTime += dt; // only the bubbles and snores move
+      return;
+    }
 
     // Waiting on the start screen: only the breathing animation
     if (!this.running) {
@@ -555,6 +723,11 @@ export class Player {
   }
 
   draw(ctx) {
+    if (this.passedOut) {
+      this.drawPassedOut(ctx);
+      return;
+    }
+
     // Giant: scale everything up from the middle of the feet
     ctx.save();
     if (this.scale !== 1) {
@@ -574,6 +747,48 @@ export class Player {
       ctx.drawImage(sprite, Math.round(this.x), Math.round(this.y));
     }
     ctx.restore();
+  }
+
+  // Lying on the carpet with the bottle, blowing "hic" bubbles and snoring
+  drawPassedOut(ctx) {
+    const groundY = CONFIG.GROUND_Y;
+    const left = Math.round(this.x + this.width / 2 - DRUNK_FRAME.width / 2);
+    const top = groundY - 1 - DRUNK_BOTTOM;
+
+    ctx.drawImage(
+      DROPPED_BOUQUET,
+      left + DROPPED_BOUQUET_X,
+      groundY - 1 - DROPPED_BOUQUET_BOTTOM,
+    );
+    ctx.drawImage(DRUNK_FRAME, left, top);
+
+    // Two "hic" bubbles take turns rising from his mouth, growing, then popping
+    const time = this.passedOutTime;
+    for (let i = 0; i < 2; i++) {
+      const progress = (time / BUBBLE_CYCLE + i / 2) % 1;
+      const size = 1 + Math.floor(progress * 3); // 1 -> 3 pixels
+      const x =
+        left + DRUNK_MOUTH[0] - 2 + Math.round(Math.sin(progress * 6) * 1.5);
+      const y = top + DRUNK_MOUTH[1] - 2 - Math.round(progress * 10);
+      ctx.fillStyle = BUBBLE_COLOR;
+      ctx.fillRect(x, y, size, size);
+    }
+
+    // A slow line of "z"s drifting up from his head
+    for (let i = 0; i < 3; i++) {
+      const progress = (time / SNORE_CYCLE + i / 3) % 1;
+      const x = left + DRUNK_HEAD_TOP[0] - 6 - Math.round(progress * 6);
+      const y = top + DRUNK_HEAD_TOP[1] - 4 - Math.round(progress * 16);
+      ctx.save();
+      ctx.globalAlpha = 1 - progress;
+      ctx.fillStyle = SNORE_COLOR;
+      SNORE_Z.forEach((row, ry) => {
+        for (let rx = 0; rx < row.length; rx++) {
+          if (row[rx] === "z") ctx.fillRect(x + rx, y + ry, 1, 1);
+        }
+      });
+      ctx.restore();
+    }
   }
 
   // Tucked pose spinning forward (clockwise, he faces right) around its center

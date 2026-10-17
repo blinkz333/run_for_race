@@ -4,7 +4,7 @@
 // =====================================================
 
 import { CONFIG } from "./config.js";
-import { view } from "./view.js";
+import { view, snap } from "./view.js";
 
 const COLORS = CONFIG.COLORS;
 const H = CONFIG.CANVAS_HEIGHT;
@@ -238,6 +238,7 @@ export class Renderer {
   setScale(scale) {
     this.ctx.setTransform(scale, 0, 0, scale, 0, 0);
     this.ctx.imageSmoothingEnabled = false;
+    view.pixelScale = scale;
   }
 
   clear() {
@@ -246,14 +247,29 @@ export class Renderer {
 
   // Draws the full background. scrollX = distance the world has moved.
   drawBackground(scrollX) {
-    const wallOffset = scrollX * WALL_PARALLAX;
-    this.drawWall(wallOffset);
-    this.drawWainscot(wallOffset);
-    this.drawWallTiles(wallOffset);
+    this.drawLayer(scrollX * WALL_PARALLAX, (offset) => {
+      this.drawWall(offset);
+      this.drawWainscot(offset);
+      this.drawWallTiles(offset);
+    });
     this.drawCeiling();
-    this.drawChandeliers(scrollX * CHANDELIER_PARALLAX);
-    this.drawBanquet(scrollX * BANQUET_PARALLAX);
-    this.drawFloor(scrollX);
+    this.drawLayer(scrollX * CHANDELIER_PARALLAX, (offset) =>
+      this.drawChandeliers(offset),
+    );
+    this.drawLayer(scrollX * BANQUET_PARALLAX, (offset) =>
+      this.drawBanquet(offset),
+    );
+    this.drawLayer(scrollX, (offset) => this.drawFloor(offset));
+  }
+
+  // Draws one scrolling layer smoothly: the layer is drawn at the whole game pixel,
+  // then nudged left by the rest, rounded to a real screen pixel (see snap in view.js)
+  drawLayer(offset, draw) {
+    const whole = Math.floor(offset);
+    this.ctx.save();
+    this.ctx.translate(-snap(offset - whole), 0);
+    draw(whole);
+    this.ctx.restore();
   }
 
   // ---------- Helpers ----------
@@ -290,6 +306,7 @@ export class Renderer {
       draw(Math.floor(x));
     }
   }
+
   // ---------- Wall ----------
 
   drawWall(offset) {
@@ -598,6 +615,7 @@ export class Renderer {
       }
     });
   }
+
   // ---------- Floor ----------
 
   drawFloor(scrollX) {
@@ -665,19 +683,6 @@ export class Renderer {
 
   drawPixelHeart(x, y, color) {
     this.drawShape(HEART_SHAPE, x, y, color);
-  }
-
-  // "Made by Blink" + blinking heart on a dark badge, bottom-right of the centered area
-  drawCredit(time) {
-    this.setFont(7);
-    const textW = Math.ceil(this.ctx.measureText(CONFIG.CREDIT).width);
-    const w = textW + 26;
-    const x = view.offsetX + CONFIG.CANVAS_WIDTH - w - 6;
-    const y = H - 22;
-    this.pixelBox(x, y, w, 16, "rgba(61, 12, 25, 0.85)", COLORS.GOLD);
-    this.text(CONFIG.CREDIT, x + 6 + textW / 2, y + 8, 7, COLORS.GOLD_LIGHT);
-    if (Math.sin(time * 5) > 0)
-      this.drawPixelHeart(x + 10 + textW, y + 4, COLORS.PETAL);
   }
 
   // Draws a small pixel map where 'x' = filled pixel (scale = size of each pixel)
@@ -790,8 +795,6 @@ export class Renderer {
       );
       this.text("SLIDE: ARROW DOWN", cx, 205, 8, COLORS.GOLD_LIGHT);
     }
-
-    this.drawCredit(time);
   }
 
   // ---------- Sound button ----------

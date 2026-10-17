@@ -7,10 +7,11 @@
 //   - Yum Yum Chang Noi packs (worth more) often fill the top row
 // A column of items is spawned every HEART_SPACING pixels of distance,
 // so the blocks stay evenly packed at any speed.
+// Items stand still (no floating): a big field of bobbing items made players' eyes tired.
 // =====================================================
 
 import { CONFIG } from "./config.js";
-import { view } from "./view.js";
+import { view, snap } from "./view.js";
 import { intersects } from "./obstacle.js";
 
 const GROUND_Y = CONFIG.GROUND_Y;
@@ -48,8 +49,6 @@ const ARC_ROWS = 3; // the arc is this many items thick
 const YUMYUM_ROW_CHANCE = 0.4; // chance for a block or an arc to get a Yum Yum top row
 const YUMYUM_PEAK_CHANCE = 0.5; // otherwise, chance for one pack at the top of an arc
 
-const BOB_SPEED = 5; // gentle up/down floating
-const BOB_HEIGHT = 1.5;
 const SPARKLE_SPEED = 8;
 const SPARKLE_COLOR = "#fff1b8";
 
@@ -179,6 +178,7 @@ const SCORES = {
   [ItemKind.PIPO]: CONFIG.PIPO_SCORE,
   [ItemKind.YUMYUM]: CONFIG.YUMYUM_SCORE,
 };
+
 class Item {
   // x = left edge, y = top, color = which Pipo color (Pipo only)
   constructor(kind, x, y, color = 0) {
@@ -188,36 +188,31 @@ class Item {
     this.width = this.sprite.width;
     this.height = this.sprite.height;
     this.x = x;
-    this.baseY = y;
-    this.y = y;
-    this.age = x * 0.05; // neighbours bob a little out of step, like a wave
+    this.y = Math.round(y);
   }
 
   update(dt, speed) {
     this.x -= speed * dt;
-    this.age += dt;
-    this.y = this.baseY + Math.sin(this.age * BOB_SPEED) * BOB_HEIGHT;
   }
-
   // A little bigger than the picture so items are easy to grab
   getHitbox() {
     return {
       x: this.x - 2,
-      y: this.baseY - 3,
+      y: this.y - 3,
       width: this.width + 4,
       height: this.height + 6,
     };
   }
 
   draw(ctx) {
-    const x = Math.round(this.x);
-    const y = Math.round(this.y);
+    const x = snap(this.x);
+    const y = this.y;
     ctx.drawImage(this.sprite, x, y);
     if (this.kind !== ItemKind.YUMYUM) return;
 
-    // Yum Yum packs twinkle so they stand out from the hearts
+    // Yum Yum packs twinkle so they stand out from the hearts (all packs in step, on one clock)
     ctx.fillStyle = SPARKLE_COLOR;
-    if (Math.sin(this.age * SPARKLE_SPEED) > 0) {
+    if (Math.sin((performance.now() / 1000) * SPARKLE_SPEED) > 0) {
       ctx.fillRect(x - 2, y - 1, 1, 1);
       ctx.fillRect(x + this.width + 1, y + this.height - 2, 1, 1);
     } else {
@@ -248,13 +243,14 @@ export class HeartManager {
   }
 
   // obstacleManager tells us where obstacles are (and what comes next) for the arcs
-  update(dt, speed, obstacleManager) {
+  // jumpSpeed = how far the groom moves per second of his own jump (arcs follow his jump)
+  update(dt, speed, obstacleManager, jumpSpeed = speed) {
     this.distanceToNext -= speed * dt;
     while (this.distanceToNext <= 0) {
       // distanceToNext is now 0 or a little below, so the spacing stays exact
       this.spawnAt(
         view.width + SPAWN_MARGIN + this.distanceToNext,
-        speed,
+        jumpSpeed,
         obstacleManager,
       );
       this.distanceToNext += HEART_SPACING;
@@ -265,7 +261,7 @@ export class HeartManager {
   }
 
   // Decides what goes in the column at x: a thick arc, a carpet block column, or nothing
-  spawnAt(x, speed, obstacleManager) {
+  spawnAt(x, jumpSpeed, obstacleManager) {
     const centerX = x + SPRITES[ItemKind.HEART].width / 2;
     const obstacles = this.getObstacles(obstacleManager);
     this.column += 1;
@@ -276,7 +272,7 @@ export class HeartManager {
       const arc = ARCS[obstacle.dodge];
       if (!arc) continue;
       const halfWidth =
-        (JUMP_AIR_TIME * speed * arc.width * ARC_WIDTH_SCALE) / 2;
+        (JUMP_AIR_TIME * jumpSpeed * arc.width * ARC_WIDTH_SCALE) / 2;
       const offset = (centerX - obstacle.centerX) / halfWidth; // -1 .. 1 across the arc
       if (Math.abs(offset) > 1) continue;
 

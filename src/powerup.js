@@ -6,7 +6,7 @@
 // =====================================================
 
 import { CONFIG } from "./config.js";
-import { view } from "./view.js";
+import { view, snap } from "./view.js";
 import { intersects } from "./obstacle.js";
 
 const GROUND_Y = CONFIG.GROUND_Y;
@@ -20,7 +20,7 @@ export const PowerUpType = Object.freeze({
 // Floats low, right in the groom's path: running or sliding grabs it, jumping misses it
 const FLOAT_BOTTOM = GROUND_Y - 14; // bottom of the item (pixels)
 const OBSTACLE_CLEARANCE = 70; // never spawn this close to an obstacle (pixels)
-const RETRY_DISTANCE = 40; // spot taken by an obstacle -> try again a bit later (pixels)
+const RETRY_TIME = 0.25; // spot taken by an obstacle -> try again a bit later (seconds)
 const CHAIN_DELAY = 1; // a chained power-up shows up about this many seconds after the last one
 
 // Eating / chugging animation, held at the groom's mouth
@@ -32,6 +32,10 @@ const REGENCY_HELD_SCALE = 0.6;
 const REGENCY_START_ANGLE = -1.25; // radians: bottle lying forward, neck at the mouth
 const REGENCY_END_ANGLE = -2.6; // bottoms up
 const DRINK_COLOR = "#e8a04a";
+
+// Regency speed lines: kept faint and few, so a long boost doesn't make players dizzy
+const SPEED_LINE_ALPHA = 0.4;
+const SPEED_LINE_COUNT = 12;
 
 const BOB_SPEED = 4;
 const BOB_HEIGHT = 2;
@@ -124,7 +128,6 @@ function makeSprite(map, palette) {
   });
   return canvas;
 }
-
 export const POWERUP_SPRITES = {
   [PowerUpType.MAGNUM]: makeSprite(MAGNUM_MAP, MAGNUM_PALETTE),
   [PowerUpType.REGENCY]: makeSprite(REGENCY_MAP, REGENCY_PALETTE),
@@ -165,7 +168,7 @@ class PowerUp {
   }
 
   draw(ctx) {
-    const x = Math.round(this.x);
+    const x = snap(this.x);
     const y = Math.round(this.y);
     const centerX = x + this.width / 2;
     const centerY = y + this.height / 2;
@@ -197,7 +200,7 @@ class PowerUp {
     for (let i = 0; i < 3; i++) {
       const a = angle + (i * Math.PI * 2) / 3;
       ctx.fillRect(
-        Math.round(centerX + Math.cos(a) * 12),
+        centerX + Math.round(Math.cos(a) * 12),
         Math.round(centerY + Math.sin(a) * 14),
         1,
         1,
@@ -213,39 +216,50 @@ export class PowerUpManager {
 
   reset() {
     this.items = [];
-    this.distanceToNext = this.randomGap() * CONFIG.POWERUP_FIRST_DELAY;
+    this.level = 1;
+    this.timeToNext = this.randomGap() * CONFIG.POWERUP_FIRST_DELAY; // seconds
     this.bag = []; // Magnum and Regency take turns in a random order
     this.chainPending = false; // a chained power-up is on its way (spawns even while powered up)
   }
 
   // Called when the groom grabs a power-up: sometimes another one follows soon after
-  onCollected(speed) {
-    if (Math.random() >= CONFIG.POWERUP_CHAIN_CHANCE) return;
+  // (less often at higher levels)
+  onCollected() {
+    const chance =
+      CONFIG.POWERUP_CHAIN_CHANCE -
+      (this.level - 1) * CONFIG.POWERUP_CHAIN_STEP;
+    if (Math.random() >= chance) return;
     this.chainPending = true;
-    this.distanceToNext = speed * CHAIN_DELAY;
+    this.timeToNext = CHAIN_DELAY;
   }
 
-  // Distance (pixels) between two power-ups at the base speed
+  // Seconds of running between two power-ups. Counted in time, not distance,
+  // so a faster world doesn't bring them sooner; higher levels make the gap longer.
   randomGap() {
     const seconds =
       CONFIG.POWERUP_GAP_MIN +
       Math.random() * (CONFIG.POWERUP_GAP_MAX - CONFIG.POWERUP_GAP_MIN);
-    return CONFIG.OBSTACLE_SPEED * seconds;
+    const scale = Math.min(
+      CONFIG.POWERUP_GAP_MAX_SCALE,
+      1 + (this.level - 1) * CONFIG.POWERUP_GAP_STEP,
+    );
+    return seconds * scale;
   }
 
   // obstacleManager is used to keep power-ups away from obstacles.
   // paused = true while a power-up is on (no new one until it ends, unless one is chained)
-  update(dt, speed, obstacleManager, paused) {
-    if (!paused || this.chainPending) this.distanceToNext -= speed * dt;
-    if (this.distanceToNext <= 0) {
+  update(dt, speed, obstacleManager, paused, level) {
+    this.level = level;
+    if (!paused || this.chainPending) this.timeToNext -= dt;
+    if (this.timeToNext <= 0) {
       const x = view.width + SPAWN_MARGIN;
       if (this.isNearObstacle(x, obstacleManager)) {
-        this.distanceToNext = RETRY_DISTANCE;
+        this.timeToNext = RETRY_TIME;
       } else {
         if (this.bag.length === 0)
           this.bag = shuffle([PowerUpType.MAGNUM, PowerUpType.REGENCY]);
         this.items.push(new PowerUp(this.bag.pop(), x));
-        this.distanceToNext = this.randomGap();
+        this.timeToNext = this.randomGap();
         this.chainPending = false;
       }
     }
@@ -343,16 +357,16 @@ export function drawConsume(ctx, type, progress, mouthX, mouthY, scale) {
 export function drawSpeedLines(ctx, time, strength) {
   if (strength <= 0) return;
   ctx.save();
-  ctx.globalAlpha = 0.75 * strength;
+  ctx.globalAlpha = SPEED_LINE_ALPHA * strength;
   ctx.fillStyle = "#fff8ef";
-  for (let i = 0; i < 24; i++) {
+  for (let i = 0; i < SPEED_LINE_COUNT; i++) {
     // Each line has its own height and speed, from a fixed pattern
     const y = 40 + ((i * 37) % 180);
     const length = 30 + ((i * 13) % 40);
-    const speed = 700 + ((i * 97) % 400);
+    const speed = 450 + ((i * 97) % 250);
     const span = view.width + length;
     const x = view.width - ((time * speed + i * 83) % span);
-    ctx.fillRect(Math.round(x), y, length, 1);
+    ctx.fillRect(snap(x), y, length, 1);
   }
   ctx.restore();
 }

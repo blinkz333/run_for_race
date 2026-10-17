@@ -9,7 +9,7 @@
 // =====================================================
 
 import { CONFIG } from "./config.js";
-import { view } from "./view.js";
+import { view, snap } from "./view.js";
 
 const GROUND_Y = CONFIG.GROUND_Y;
 
@@ -28,9 +28,23 @@ const HIGH_CLEARANCE = 22;
 // The GTA VI ribbon hangs from just under the ceiling trim
 const RIBBON_TOP = 17;
 
-// Distance between obstacles = speed x interval x random(MIN..MAX)
+// Distance between obstacles = spacingSpeed x interval x random(MIN..MAX) x level scale,
+// but never less than spacingSpeed x CONFIG.MIN_SPAWN_TIME
 const SPAWN_GAP_MIN = 0.85;
 const SPAWN_GAP_MAX = 1.4;
+const DOUBLE_LEAD_TIME = 0.35; // extra seconds before a double-jump obstacle
+
+// Groups: at higher speed, 2 - 4 obstacles stand close together and one jump
+// (or one slide) gets past all of them. The whole group must pass the groom in
+// this many seconds of his own time, so it always fits inside a single jump / slide.
+const GROUP_TIME = { jump: 0.25, slide: 0.18 };
+const GROUP_TYPES = {
+  jump: ["FRIEND_GROUND"],
+  slide: ["FRIEND_HIGH", "GTA_VI"],
+};
+const GROUP_GAP_MAX = 14; // pixels between group members at the start ...
+const GROUP_GAP_MIN = 4; // ... shrinking to this at high speed
+const GROUP_GAP_STEP = 4; // pixels less for every 1x of speed
 const FIRST_SPAWN_DELAY = 1.2; // seconds of free running at the start
 const SPAWN_MARGIN = 8; // new things appear just off the right edge of the view
 
@@ -287,6 +301,7 @@ const WING_PALETTE = { x: "#1e0a14", m: "#6b2a8a" };
 // Small dark trident head (x = iron, l = highlight)
 const TRIDENT_HEAD_MAP = ["x.x.x", "x.l.x", "xxlxx", "..l.."];
 const TRIDENT_PALETTE = { x: "#3a3140", l: "#6a5f72" };
+
 // ---------- Ben: standing, hugging a big frog, holding up a pink balloon (32x90) ----------
 // Side-swept fringe, small smiling eyes, silver hoop earring, black kimono and haori,
 // bead necklace and purple obi (from the photos).
@@ -412,6 +427,7 @@ const BEN_BALLOON_MAP = [
 ];
 const BEN_BALLOON_PALETTE = { x: "#f3a6c4", H: "#fff8ef", k: "#d9466a" };
 const BEN_BALLOON_X = 21;
+
 // ---------- Sprite building ----------
 
 function newCanvas(width, height) {
@@ -714,13 +730,13 @@ export class Obstacle {
       return;
     }
     if (!this.config.flying) {
-      ctx.drawImage(this.sprite, Math.round(this.x), Math.round(this.y));
+      ctx.drawImage(this.sprite, snap(this.x), Math.round(this.y));
       return;
     }
 
     // Shadow on the carpet so it reads as flying
     ctx.fillStyle = "rgba(30, 7, 16, 0.35)";
-    ctx.fillRect(Math.round(this.x) + 1, GROUND_Y - 2, 12, 2);
+    ctx.fillRect(snap(this.x) + 1, GROUND_Y - 2, 12, 2);
 
     // Flapping wings and a gentle up/down hover
     const frames = this.config.frames;
@@ -729,7 +745,7 @@ export class Obstacle {
     const bob = Math.round(
       Math.sin(this.age * DEVIL_BOB_SPEED) * DEVIL_BOB_HEIGHT,
     );
-    ctx.drawImage(frame, Math.round(this.x), Math.round(this.y) + bob);
+    ctx.drawImage(frame, snap(this.x), Math.round(this.y) + bob);
   }
 
   // Spinning around its center and fading out
@@ -738,7 +754,7 @@ export class Obstacle {
     ctx.save();
     ctx.globalAlpha = Math.max(0, 1 - this.smashTime / SMASH_TIME);
     ctx.translate(
-      Math.round(this.x + this.width / 2),
+      snap(this.x + this.width / 2),
       Math.round(this.y + this.height / 2),
     );
     ctx.rotate(this.smashTime * SMASH_SPIN);
@@ -763,23 +779,64 @@ export class ObstacleManager {
     this.lastType = null;
   }
 
-  // spawnScale < 1 puts obstacles closer together (used by the difficulty levels)
-  update(dt, speed, spawnScale = 1) {
+  // spacing.spawnScale: < 1 puts obstacles closer together (difficulty levels)
+  // spacing.spacingSpeed: pixels per second of the groom's own time (his jumps cover
+  //   spacingSpeed x their time), so every gap below is a gap the groom can make
+  // spacing.speedLevel: the level's speed (1 = level 1, no Regency boost), for the groups
+  update(dt, speed, spacing = {}) {
+    const { spawnScale = 1, spacingSpeed = speed, speedLevel = 1 } = spacing;
     // Spawn by distance, so spacing stays fair at any speed
     this.distanceToNext -= speed * dt;
     if (this.distanceToNext <= 0) {
       const obstacle = this.spawn();
+      const groupLength = this.addGroup(obstacle, spacingSpeed, speedLevel);
       const gapAfter = obstacle.config.gapAfter ?? 1;
       const gap =
         SPAWN_GAP_MIN + Math.random() * (SPAWN_GAP_MAX - SPAWN_GAP_MIN);
-      this.distanceToNext +=
-        speed * CONFIG.OBSTACLE_SPAWN_INTERVAL * gap * spawnScale * gapAfter;
+      // A double-jump obstacle needs more room before it (its first jump starts early)
+      const minSeconds =
+        CONFIG.MIN_SPAWN_TIME +
+        (this.peekNext().dodge === "double" ? DOUBLE_LEAD_TIME : 0);
+      const seconds = Math.max(
+        minSeconds,
+        CONFIG.OBSTACLE_SPAWN_INTERVAL * gap * spawnScale,
+      );
+      this.distanceToNext += groupLength + spacingSpeed * seconds * gapAfter;
     }
 
     for (const obstacle of this.obstacles) obstacle.update(dt, speed);
     this.obstacles = this.obstacles.filter(
       (obstacle) => !obstacle.isOffScreen(),
     );
+  }
+
+  // Sometimes puts more obstacles of the same kind right behind `first`
+  // (more often the faster the level). Returns how much longer that made it (pixels).
+  addGroup(first, spacingSpeed, speedLevel) {
+    const types = GROUP_TYPES[first.dodge];
+    const chance = Math.min(
+      CONFIG.GROUP_MAX_CHANCE,
+      (speedLevel - 1) * CONFIG.GROUP_CHANCE_STEP,
+    );
+    if (!types || Math.random() >= chance) return 0;
+
+    const gap = Math.max(
+      GROUP_GAP_MIN,
+      GROUP_GAP_MAX - (speedLevel - 1) * GROUP_GAP_STEP,
+    );
+    const maxLength = spacingSpeed * GROUP_TIME[first.dodge]; // the group must pass in this many pixels
+    const size = 2 + Math.floor(Math.random() * (CONFIG.GROUP_MAX_SIZE - 1)); // 2 .. GROUP_MAX_SIZE
+    let end = first.x + first.width;
+    for (let i = 1; i < size; i++) {
+      const obstacle = new Obstacle(
+        types[Math.floor(Math.random() * types.length)],
+      );
+      obstacle.x = end + gap;
+      if (obstacle.x + obstacle.width - first.x > maxLength) break; // would not fit in one jump / slide
+      this.obstacles.push(obstacle);
+      end = obstacle.x + obstacle.width;
+    }
+    return end - (first.x + first.width);
   }
 
   // "Shuffle bag": every type comes once per round in a random order,

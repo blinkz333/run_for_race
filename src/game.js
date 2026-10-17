@@ -55,7 +55,7 @@ const PORTRAIT_TOUCH = window.matchMedia(
 const BUTTON_FLASH_TIME = 0.12;
 
 // Hit feedback
-const BLINK_RATE = 15; // groom blinks this many times per second while invulnerable
+const BLINK_RATE = 6; // groom blinks this many times per second while invulnerable (faster tires the eyes)
 const SHAKE_DURATION = 0.25; // seconds
 const SHAKE_STRENGTH = 2; // pixels
 const HURT_FLASH_DURATION = 0.2; // seconds
@@ -68,14 +68,15 @@ const FADE_TIME = 0.3; // seconds for each half
 const FADE_STEPS = 6; // the fade moves in a few hard steps, like an old console
 const FADE_COLOR = "#1e0710";
 
-// Speed changes ease in over about this many seconds instead of jumping
-const SPEED_EASE_TIME = 1.5;
+// A speed-up takes this many seconds (short, so it is easy to feel)
+const SPEED_RAMP_TIME = 0.5;
+// The world never moves more than this many pixels in one update step
+const MAX_STEP_DISTANCE = 6;
 
 // Power-ups
 const BOOST_EASE_TIME = 0.25; // the Regency boost kicks in (and wears off) this fast
 const POWERUP_WARNING = 0.6; // the groom blinks for the last seconds of a power-up
 const POWERUP_CATCH_ZONE = 30; // power-ups this close to the right edge clear the hearts under them
-const SMASH_SHAKE = 0.12; // seconds of screen shake per smashed obstacle
 const AFTERIMAGES = [
   { offset: 7, alpha: 0.35 },
   { offset: 14, alpha: 0.15 },
@@ -284,7 +285,6 @@ export class Game {
     this.stateTime = 0;
     this.heldPointers.clear();
   }
-
   start() {
     // BOOT finished -> show the start screen
     this.setState(GameState.MENU);
@@ -362,7 +362,8 @@ export class Game {
     this.boostFactor = 1;
     this.consume = null;
     this.levelAge = Infinity;
-    this.player.reset(); // groom stops and stands (standby pose)
+    this.player.reset();
+    this.player.passOut(); // lies on the carpet, drunk, hugging a Regency bottle
     this.setState(GameState.GAME_OVER);
     this.audio.stopMusic();
     this.audio.play("gameOver");
@@ -494,7 +495,7 @@ export class Game {
       powerUp.y + powerUp.height / 2,
     );
     this.audio.play(info.consumeSound);
-    this.powerUps.onCollected(this.worldSpeed);
+    this.powerUps.onCollected();
   }
 
   // The power-up kicks in (grabbing the same one again restarts its time)
@@ -531,12 +532,20 @@ export class Game {
       this.audio.play("powerDown");
     }
 
-    const boostTarget = this.boostTimer > 0 ? CONFIG.BOOST_SPEED : 1;
+    // The boost never takes the world past MAX_BOOST_SPEED (it gets smaller at high levels)
+    const boostLimit =
+      (CONFIG.OBSTACLE_SPEED * CONFIG.MAX_BOOST_SPEED) / this.speed;
+    const boostTarget =
+      this.boostTimer > 0
+        ? Math.max(1, Math.min(CONFIG.BOOST_SPEED, boostLimit))
+        : 1;
     this.boostFactor +=
       (boostTarget - this.boostFactor) * Math.min(1, dt / BOOST_EASE_TIME);
   }
 
   // While powered up, every obstacle the groom touches is knocked away
+  // and is worth SMASH_SCORE points
+  // (no screen shake here: with many smashes in a row it made players dizzy)
   smashObstacles() {
     let obstacle = this.obstacles.findCollision(this.player.getHitbox());
     while (obstacle) {
@@ -545,12 +554,17 @@ export class Game {
         obstacle.x + obstacle.width / 2,
         obstacle.y + obstacle.height / 2,
       );
-      this.shakeTimer = Math.max(this.shakeTimer, SMASH_SHAKE);
+      this.popups.push({
+        x: obstacle.x + obstacle.width / 2,
+        y: obstacle.y - 4,
+        age: 0,
+        text: `+${CONFIG.SMASH_SCORE}`,
+      });
+      this.addScore(CONFIG.SMASH_SCORE);
       this.audio.play("smash");
       obstacle = this.obstacles.findCollision(this.player.getHitbox());
     }
   }
-
   // Called when the groom touches an obstacle
   hitPlayer() {
     const player = this.player;
@@ -591,7 +605,15 @@ export class Game {
     this.updateFade(dt);
 
     if (this.state === GameState.PLAYING) {
-      this.updatePlaying(dt);
+      // At high speed the world moves far in one frame, so the run is updated in
+      // small steps; otherwise the groom could skip right through a thin obstacle
+      const steps = Math.max(
+        1,
+        Math.ceil((this.worldSpeed * dt) / MAX_STEP_DISTANCE),
+      );
+      for (let i = 0; i < steps && this.state === GameState.PLAYING; i++) {
+        this.updatePlaying(dt / steps);
+      }
     } else {
       // MENU, GAME_OVER: the hall stands still, the groom breathes
       this.player.update(dt);
@@ -618,21 +640,25 @@ export class Game {
     }
   }
 
-  // Speed and obstacle gap for the current level (level 1 = the base values)
-  getDifficulty() {
-    const steps = this.level - 1;
+  // Speed and obstacle gap for a level (level 1 = the base values)
+  getDifficulty(level = this.level) {
+    const steps = level - 1;
+    const speedSteps = Math.floor(steps / CONFIG.SPEED_LEVELS);
     return {
-      speed: 1 + steps * CONFIG.SPEED_STEP, // no top speed
+      speed: 1 + speedSteps * CONFIG.SPEED_STEP, // no top speed: it keeps going up
       spawn: Math.max(CONFIG.MIN_SPAWN, 1 - steps * CONFIG.SPAWN_STEP),
     };
   }
 
-  // A new level every LEVEL_SCORE points, with a banner and a sound
+  // A new level every LEVEL_SCORE points, with a banner and a sound.
+  // The banner only says SPEED UP when the speed really goes up.
   updateLevel() {
     const level = 1 + Math.floor(this.score / CONFIG.LEVEL_SCORE);
     if (level <= this.level) return;
+    const speedUp =
+      this.getDifficulty(level).speed > this.getDifficulty().speed;
     this.level = level;
-    this.levelText = `LEVEL ${level} - SPEED UP!`;
+    this.levelText = speedUp ? `LEVEL ${level} - SPEED UP!` : `LEVEL ${level}`;
     this.levelAge = 0;
     this.audio.play("milestone");
   }
@@ -643,20 +669,36 @@ export class Game {
 
     const difficulty = this.getDifficulty();
     const targetSpeed = CONFIG.OBSTACLE_SPEED * difficulty.speed;
-    this.speed +=
-      (targetSpeed - this.speed) * Math.min(1, dt / SPEED_EASE_TIME);
+    const maxChange =
+      ((CONFIG.OBSTACLE_SPEED * CONFIG.SPEED_STEP) / SPEED_RAMP_TIME) * dt;
+    this.speed += Math.max(
+      -maxChange,
+      Math.min(maxChange, targetSpeed - this.speed),
+    );
     this.updatePowerUps(dt);
     this.worldSpeed = this.speed * this.boostFactor;
 
     this.scrollX += this.worldSpeed * dt;
-    this.updatePlayer(dt);
-    this.obstacles.update(dt, this.worldSpeed, difficulty.spawn);
-    this.hearts.update(dt, this.worldSpeed, this.obstacles);
+    // The groom moves faster at higher levels, so obstacles can stand closer together
+    const timeScale = this.playerTimeScale();
+    this.updatePlayer(dt, timeScale);
+    this.obstacles.update(dt, this.worldSpeed, {
+      spawnScale: difficulty.spawn,
+      spacingSpeed: this.speed / timeScale,
+      speedLevel: this.speed / CONFIG.OBSTACLE_SPEED,
+    });
+    this.hearts.update(
+      dt,
+      this.worldSpeed,
+      this.obstacles,
+      this.worldSpeed / timeScale,
+    );
     this.powerUps.update(
       dt,
       this.worldSpeed,
       this.obstacles,
       this.isPoweredUp(),
+      this.level,
     );
 
     // A power-up that just appeared clears the hearts under it, so it stands out
@@ -685,12 +727,18 @@ export class Game {
     this.buttonFlash.slide = Math.max(0, this.buttonFlash.slide - dt);
   }
 
+  // How many times faster the groom jumps / slides / runs than at level 1.
+  // JUMP_SPEEDUP 1 = a jump always covers the same distance on screen, 0 = never faster.
+  playerTimeScale() {
+    return Math.pow(this.speed / CONFIG.OBSTACLE_SPEED, CONFIG.JUMP_SPEEDUP);
+  }
+
   // Moves the groom and kicks up dust / sparks / sounds for what he just did
-  updatePlayer(dt) {
+  updatePlayer(dt, timeScale = 1) {
     const player = this.player;
     const wasOnGround = player.onGround;
     const jumpsBefore = player.jumpCount;
-    player.update(dt);
+    player.update(dt * timeScale);
 
     const centerX = player.x + player.width / 2;
     if (wasOnGround && !player.onGround) {
@@ -733,7 +781,8 @@ export class Game {
     this.obstacles.draw(ctx);
     this.hearts.draw(ctx);
     this.powerUps.draw(ctx);
-    if (this.isPlayerVisible()) this.drawPlayer();
+    const passedOut = this.state === GameState.GAME_OVER;
+    if (!passedOut && this.isPlayerVisible()) this.drawPlayer();
     this.effects.draw(ctx);
     ctx.restore();
 
@@ -743,6 +792,8 @@ export class Game {
       this.renderer.drawMenu(this.time);
     } else {
       this.drawRunHud();
+      // Game Over: the passed-out groom is drawn on top of the dark overlay so he stays in view
+      if (passedOut) this.drawPlayer();
     }
 
     this.renderer.drawSoundButton(this.audio.muted);

@@ -15,7 +15,15 @@ const MAX_VIEW_WIDTH = 640;
 export const view = {
   width: CONFIG.CANVAS_WIDTH,
   offsetX: 0, // left edge of the centered 480px area used by menus and panels
+  pixelScale: 1, // screen pixels per game pixel (set by the renderer)
 };
+
+// Rounds a moving x to the nearest real screen pixel instead of the nearest game pixel.
+// The canvas has several screen pixels per game pixel, so things that scroll move in
+// small even steps (smooth) instead of jumping 2, 3, 2, 3 game pixels (jerky, tiring).
+export function snap(value) {
+  return Math.round(value * view.pixelScale) / view.pixelScale;
+}
 
 // aspect = screen width / screen height
 export function setViewAspect(aspect) {

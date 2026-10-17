@@ -84,3 +84,8 @@ const fontReady = Promise.all([
 ]).catch(() => {});
 const timeout = new Promise((resolve) => setTimeout(resolve, FONT_TIMEOUT));
 Promise.race([fontReady, timeout]).then(() => game.start());
+
+// Test mode: add ?bot to the address and the game plays itself (see bot.js)
+if (new URLSearchParams(location.search).has("bot")) {
+  import("./bot.js").then(({ startBot }) => startBot(game));
+}

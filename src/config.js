@@ -31,6 +31,7 @@ export const CONFIG = Object.freeze({
   HEART_SCORE: 10,
   PIPO_SCORE: 10, // Pipo jelly cup (many colors), mixed in with the hearts
   YUMYUM_SCORE: 20, // Yum Yum Chang Noi pack, often on the top row of a block or arc
+  SMASH_SCORE: 100, // each obstacle smashed while a power-up is on
 
   // ----- Health -----
   STARTING_LIVES: 3,
@@ -52,24 +53,40 @@ export const CONFIG = Object.freeze({
   OBSTACLE_SPEED: 150, // world scroll speed in pixels per second
   OBSTACLE_SPAWN_INTERVAL: 1.6, // seconds (base value)
 
-  // ----- Difficulty (goes up forever, every LEVEL_SCORE points) -----
-  // Level 1 = speed 1.0x. Each new level: speed +SPEED_STEP, obstacle gap -SPAWN_STEP
-  // There is no top speed, so the best player is the one who survives the longest
+  // ----- Difficulty (goes up every LEVEL_SCORE points) -----
+  // Level 1 = speed 1.0x. Every SPEED_LEVELS levels the speed jumps up by SPEED_STEP
+  // (a big step you can clearly feel). Every level: obstacle gap -SPAWN_STEP,
+  // and power-ups come less often (see POWERUP_GAP_STEP)
   LEVEL_SCORE: 3000, // points per level (3,000 = level 2, 6,000 = level 3, ...)
-  SPEED_STEP: 0.12, // level 2 = 1.12x, level 3 = 1.24x, ...
-  SPAWN_STEP: 0.04, // level 2 = 0.96x gap, level 3 = 0.92x, ...
-  MIN_SPAWN: 0.75, // obstacles never come closer than 0.75x the base gap (so they never overlap)
+  SPEED_LEVELS: 2, // the speed goes up at level 3, 5, 7, 9, ...
+  SPEED_STEP: 0.2, // level 3 = 1.2x, level 5 = 1.4x, level 11 = 2x, level 21 = 3x, ... (no top speed)
+  SPAWN_STEP: 0.015, // level 2 = 0.985x gap, level 11 = 0.85x, level 21 = 0.7x, ...
+  MIN_SPAWN: 0.5, // ... down to 0.5x (from level 35)
+  MIN_SPAWN_TIME: 0.8, // seconds of the groom's time: obstacles never come closer, so he can always land in between
+  // The groom jumps, slides and runs faster at higher speed: speed level ^ JUMP_SPEEDUP times faster.
+  // 1 = a jump always covers the same distance on screen (so obstacles can stand much closer),
+  // 0 = he never gets faster (obstacles must be far apart at high speed).
+  JUMP_SPEEDUP: 0.5,
+  // Groups: 2 - 4 obstacles side by side that one jump (or one slide) gets past.
+  // They start once the level is fast enough, and get more common and tighter as it speeds up.
+  GROUP_CHANCE_STEP: 0.3, // chance of a group for every 1x of speed above 1x (2x = 30%, 3x = 60%, ...)
+  GROUP_MAX_CHANCE: 0.7, // ... never more than 70%
+  GROUP_MAX_SIZE: 4, // most obstacles in one group (fewer fit at low speed)
 
   // ----- Power-ups (Magnum = giant, Regency = speed boost) -----
   // While one is on, the groom cannot be hurt and smashes obstacles away
   POWERUP_DURATION: 3, // seconds
-  POWERUP_GAP_MIN: 6, // seconds of running between two power-ups (at the base speed)
+  POWERUP_GAP_MIN: 6, // seconds of running between two power-ups (at level 1, any speed)
   POWERUP_GAP_MAX: 10,
+  POWERUP_GAP_STEP: 0.15, // each level makes that gap longer: level 2 = 1.15x, level 3 = 1.3x, ...
+  POWERUP_GAP_MAX_SCALE: 2.5, // ... up to 2.5x (15 - 25 seconds, from level 11)
   POWERUP_FIRST_DELAY: 0.6, // the first one comes sooner (x the normal gap)
-  POWERUP_CHAIN_CHANCE: 0.3, // chance that another one shows up while a power-up is still on
+  POWERUP_CHAIN_CHANCE: 0.3, // chance (at level 1) that another one shows up while a power-up is still on
+  POWERUP_CHAIN_STEP: 0.05, // that chance drops this much per level (none from level 7)
   POWERUP_CONSUME_TIME: 0.6, // seconds the groom spends eating the Magnum / chugging the Regency
   GIANT_SCALE: 2, // Magnum: the groom grows this many times bigger
   BOOST_SPEED: 1.8, // Regency: the world runs this many times faster
+  MAX_BOOST_SPEED: 3.6, // ... but never faster than 3.6x the base speed (from level 27 the boost adds no speed)
   POWERUP_GRACE: 1, // seconds of blinking safety after a power-up ends
 
   // ----- Score board (Google Sheet, see apps-script/Code.gs) -----
@@ -108,7 +125,7 @@ export const CONFIG = Object.freeze({
     CRYSTAL: "#dff3ff",
     FLAME: "#ffcf5a",
     CARPET: "#503117c9",
-    CARPET_DARK: "#e8d6bb",
+    CARPET_DARK: "#7d5a3a", // carpet pattern: only a little lighter than CARPET, so it doesn't flicker when scrolling
     MARBLE: "#d8c09a",
     MARBLE_DARK: "#c4a77c",
     PETAL: "#f28bb0",
