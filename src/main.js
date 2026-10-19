@@ -5,6 +5,7 @@
 import { CONFIG } from "./config.js";
 import { Game } from "./game.js";
 import { view, setViewAspect } from "./view.js";
+import { startInstallBanner } from "./install-banner.js";
 
 const canvas = document.getElementById("game-canvas");
 const wrapper = document.getElementById("game-wrapper");
@@ -85,7 +86,11 @@ const fontReady = Promise.all([
 const timeout = new Promise((resolve) => setTimeout(resolve, FONT_TIMEOUT));
 Promise.race([fontReady, timeout]).then(() => game.start());
 
-// Test mode: add ?bot to the address and the game plays itself (see bot.js)
-if (new URLSearchParams(location.search).has("bot")) {
-  import("./bot.js").then(({ startBot }) => startBot(game));
-}
+// Phones: a banner on the menu explains how to add the game to the home screen
+startInstallBanner(game);
+
+// Test mode: add ?bot to the address and the game plays itself (see bot.js).
+// Turned off for the wedding so guests can't use it; remove the // to test again.
+// if (new URLSearchParams(location.search).has('bot')) {
+//   import('./bot.js').then(({ startBot }) => startBot(game));
+// }
