@@ -14,8 +14,8 @@ const DEFAULT_REFRESH = 10; // seconds
 const MIN_REFRESH = 5;
 const MAX_REFRESH = 300;
 const REQUEST_TIMEOUT = 15000; // milliseconds
-const PODIUM_SIZE = 3;
-const ROWS_PER_COLUMN = 7; // more places than this go into a second column ...
+const PODIUM_SIZE = 1; // only the winner stands on the podium
+const ROWS_PER_COLUMN = 9; // more places than this go into a second column ...
 const MAX_COLUMNS = 2; // ... and after that the rows get smaller (names stay readable)
 const NEW_TIME = 30000; // milliseconds a new or better score keeps its NEW! badge
 
@@ -94,14 +94,14 @@ function render(data) {
   const players = data.top.slice(0, limit);
   markNewScores(players);
 
-  // Top 3 on the podium (empty places stay, so the podium keeps its shape)
+  // The winner on the podium (an empty place stays until someone plays)
   elements.podium.replaceChildren(
     ...Array.from({ length: PODIUM_SIZE }, (_, i) =>
       makePodiumPlace(i + 1, players[i]),
     ),
   );
 
-  // Everyone else in the list
+  // Everyone else (2nd and down) in the list
   const rest = players.slice(PODIUM_SIZE);
   const columns = Math.min(
     MAX_COLUMNS,

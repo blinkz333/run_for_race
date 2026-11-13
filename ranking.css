@@ -23,8 +23,6 @@
   --text: #fff1b8;
   --shadow: #3d0c19;
   --pink: #f28bb0;
-  --silver: #d9dde8;
-  --bronze: #d08a55;
   --new: #9be05a;
   /* Thai names: the pixel font has no Thai letters, so those come from the system font */
   --font: 'Pixelify Sans', 'Noto Sans Thai', 'Sarabun', system-ui, sans-serif;
@@ -102,13 +100,11 @@ body {
   letter-spacing: 1.2vh;
 }
 
-/* ===== Podium: 2nd, 1st, 3rd side by side, 1st the tallest ===== */
+/* ===== Podium: only the winner, in the middle ===== */
 .podium {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: end;
-  gap: 2vw;
-  max-width: 120vh;
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 60vh;
   width: 100%;
   margin: 0 auto;
 }
@@ -121,23 +117,13 @@ body {
   min-width: 0;
 }
 
-.podium-place[data-rank='1'] {
-  order: 2;
-}
-.podium-place[data-rank='2'] {
-  order: 1;
-}
-.podium-place[data-rank='3'] {
-  order: 3;
-}
-
 .podium-medal {
   display: grid;
   place-items: center;
-  width: 7vh;
-  height: 7vh;
+  width: 6vh;
+  height: 6vh;
   border: 0.5vh solid var(--shadow);
-  font-size: 4vh;
+  font-size: 3.6vh;
   font-weight: 700;
   color: var(--shadow);
   background: var(--medal);
@@ -146,9 +132,10 @@ body {
 
 .podium-name {
   max-width: 100%;
-  margin-top: 1.2vh;
+  margin-top: 0.8vh;
   overflow: hidden;
-  font-size: 3.6vh;
+  font-size: 4.4vh;
+  line-height: 1.25;
   font-weight: 700;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -156,8 +143,8 @@ body {
 }
 
 .podium-score {
-  margin-top: 0.6vh;
-  font-size: 4.4vh;
+  font-size: 5.6vh;
+  line-height: 1.1;
   font-weight: 700;
   color: var(--medal);
   text-shadow: 0 0.4vh 0 var(--shadow);
@@ -172,7 +159,7 @@ body {
 /* The step the player stands on */
 .podium-step {
   width: 100%;
-  margin-top: 1.2vh;
+  margin-top: 0.8vh;
   border: 0.5vh solid var(--shadow);
   border-bottom: none;
   background: linear-gradient(var(--medal), color-mix(in srgb, var(--medal) 60%, var(--shadow)));
@@ -182,20 +169,8 @@ body {
 .podium-place[data-rank='1'] {
   --medal: var(--gold);
 }
-.podium-place[data-rank='2'] {
-  --medal: var(--silver);
-}
-.podium-place[data-rank='3'] {
-  --medal: var(--bronze);
-}
 .podium-place[data-rank='1'] .podium-step {
-  height: 9vh;
-}
-.podium-place[data-rank='2'] .podium-step {
-  height: 6vh;
-}
-.podium-place[data-rank='3'] .podium-step {
-  height: 4vh;
+  height: 3vh;
 }
 
 /* Nobody in this place yet */
@@ -203,8 +178,7 @@ body {
 .podium-place.is-empty .podium-score {
   opacity: 0.4;
 }
-
-/* ===== Places 4 and down (two columns when there are many) ===== */
+/* ===== Places 2 and down (two columns when there are many) ===== */
 .ranking-list {
   flex: 1;
   min-height: 0;
